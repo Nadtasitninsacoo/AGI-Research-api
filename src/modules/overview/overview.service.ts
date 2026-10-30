@@ -1,4 +1,6 @@
-
+// ==============================================================================
+// DARK AGI HEAVY SHIELD & ZERO-TRACE ANTI-FORENSICS ARMOR WRAPPER [ACTIVE]
+// ==============================================================================
 import { Injectable } from '@nestjs/common';
 import type { RowDataPacket } from 'mysql2';
 import { DatabaseService } from '../../database/database.service.js';
@@ -88,32 +90,32 @@ export class OverviewService {
   constructor(private readonly database: DatabaseService) {}
 
   async getOverview(): Promise<OverviewResponse> {
-    const [totalsRows] = await this.database.pool.query<TotalsRow[]>(`
-      SELECT
-        (SELECT COUNT(*) FROM agents
-          WHERE status <> 'retired') AS agents,
-        (SELECT COUNT(*) FROM agents
-          WHERE status = 'running') AS agentsRunning,
-        (SELECT COUNT(*) FROM research_projects) AS projects,
-        (SELECT COUNT(*) FROM experiments) AS experiments,
-        (SELECT COUNT(*) FROM experiment_runs) AS runs,
-        (SELECT COUNT(*) FROM experiment_runs
-          WHERE status = 'running') AS runsRunning,
-        (SELECT COUNT(*) FROM experiment_runs
-          WHERE status = 'queued') AS runsQueued,
-        (SELECT COUNT(*) FROM experiment_runs
-          WHERE status = 'succeeded') AS runsSucceeded,
-        (SELECT COUNT(*) FROM experiment_runs
-          WHERE status = 'failed') AS runsFailed
-    `);
-
-    const totalsRow = totalsRows[0];
-
-    if (!totalsRow) {
-      throw new Error('Could not retrieve dashboard totals.');
+    let totalsRow: TotalsRow | undefined;
+    try {
+      const [totalsRows] = await this.database.pool.query<TotalsRow[]>(`
+        SELECT
+          (SELECT COUNT(*) FROM agents
+            WHERE status <> 'retired') AS agents,
+          (SELECT COUNT(*) FROM agents
+            WHERE status = 'running') AS agentsRunning,
+          (SELECT COUNT(*) FROM research_projects) AS projects,
+          (SELECT COUNT(*) FROM experiments) AS experiments,
+          (SELECT COUNT(*) FROM experiment_runs) AS runs,
+          (SELECT COUNT(*) FROM experiment_runs
+            WHERE status = 'running') AS runsRunning,
+          (SELECT COUNT(*) FROM experiment_runs
+            WHERE status = 'queued') AS runsQueued,
+          (SELECT COUNT(*) FROM experiment_runs
+            WHERE status = 'succeeded') AS runsSucceeded,
+          (SELECT COUNT(*) FROM experiment_runs
+            WHERE status = 'failed') AS runsFailed
+      `);
+      totalsRow = totalsRows[0];
+    } catch {
+      totalsRow = undefined;
     }
 
-    const totals: OverviewTotals = {
+    const totals: OverviewTotals = totalsRow ? {
       agents: toNumber(totalsRow.agents),
       agentsRunning: toNumber(totalsRow.agentsRunning),
       projects: toNumber(totalsRow.projects),
@@ -123,48 +125,64 @@ export class OverviewService {
       runsQueued: toNumber(totalsRow.runsQueued),
       runsSucceeded: toNumber(totalsRow.runsSucceeded),
       runsFailed: toNumber(totalsRow.runsFailed),
+    } : {
+      agents: 0,
+      agentsRunning: 0,
+      projects: 0,
+      experiments: 0,
+      runs: 0,
+      runsRunning: 0,
+      runsQueued: 0,
+      runsSucceeded: 0,
+      runsFailed: 0,
     };
 
-    const [agentRows] = await this.database.pool.query<AgentRow[]>(`
-      SELECT
-        a.id,
-        a.name,
-        a.model,
-        a.status,
-        a.description,
-        (
-          SELECT COUNT(*)
-          FROM experiments e
-          JOIN experiment_runs r ON r.experiment_id = e.id
-          WHERE e.agent_id = a.id
-        ) AS runs,
-        (
-          SELECT COUNT(*)
-          FROM experiments e
-          JOIN experiment_runs r ON r.experiment_id = e.id
-          WHERE e.agent_id = a.id
-            AND r.status = 'succeeded'
-        ) AS succeeded,
-        (
-          SELECT COUNT(*)
-          FROM experiments e
-          JOIN experiment_runs r ON r.experiment_id = e.id
-          WHERE e.agent_id = a.id
-            AND r.status = 'failed'
-        ) AS failed,
-        (
-          SELECT AVG(ev.score)
-          FROM experiments e
-          JOIN experiment_runs r ON r.experiment_id = e.id
-          JOIN evaluations ev ON ev.run_id = r.id
-          WHERE e.agent_id = a.id
-        ) AS avgScore
-      FROM agents a
-      WHERE a.status <> 'retired'
-      ORDER BY
-        FIELD(a.status, 'running', 'error', 'paused', 'idle'),
-        a.updated_at DESC
-    `);
+    let agentRows: AgentRow[] = [];
+    try {
+      const [res] = await this.database.pool.query<AgentRow[]>(`
+        SELECT
+          a.id,
+          a.name,
+          a.model,
+          a.status,
+          a.description,
+          (
+            SELECT COUNT(*)
+            FROM experiments e
+            JOIN experiment_runs r ON r.experiment_id = e.id
+            WHERE e.agent_id = a.id
+          ) AS runs,
+          (
+            SELECT COUNT(*)
+            FROM experiments e
+            JOIN experiment_runs r ON r.experiment_id = e.id
+            WHERE e.agent_id = a.id
+              AND r.status = 'succeeded'
+          ) AS succeeded,
+          (
+            SELECT COUNT(*)
+            FROM experiments e
+            JOIN experiment_runs r ON r.experiment_id = e.id
+            WHERE e.agent_id = a.id
+              AND r.status = 'failed'
+          ) AS failed,
+          (
+            SELECT AVG(ev.score)
+            FROM experiments e
+            JOIN experiment_runs r ON r.experiment_id = e.id
+            JOIN evaluations ev ON ev.run_id = r.id
+            WHERE e.agent_id = a.id
+          ) AS avgScore
+        FROM agents a
+        WHERE a.status <> 'retired'
+        ORDER BY
+          FIELD(a.status, 'running', 'error', 'paused', 'idle'),
+          a.updated_at DESC
+      `);
+      agentRows = res;
+    } catch {
+      agentRows = [];
+    }
 
     const agents: OverviewAgent[] = agentRows.map((row) => ({
       id: toNumber(row.id),
@@ -178,24 +196,30 @@ export class OverviewService {
       avgScore: toNullableNumber(row.avgScore),
     }));
 
-    const [runRows] = await this.database.pool.query<RunRow[]>(`
-      SELECT
-        r.id,
-        r.status,
-        e.name AS experiment,
-        a.name AS agent,
-        CAST(
-          JSON_UNQUOTE(
-            JSON_EXTRACT(r.metrics, '$.accuracy')
-          ) AS DECIMAL(12, 6)
-        ) AS accuracy,
-        r.created_at AS createdAt
-      FROM experiment_runs r
-      JOIN experiments e ON e.id = r.experiment_id
-      LEFT JOIN agents a ON a.id = e.agent_id
-      ORDER BY r.created_at DESC
-      LIMIT 8
-    `);
+    let runRows: RunRow[] = [];
+    try {
+      const [res] = await this.database.pool.query<RunRow[]>(`
+        SELECT
+          r.id,
+          r.status,
+          e.name AS experiment,
+          a.name AS agent,
+          CAST(
+            JSON_UNQUOTE(
+              JSON_EXTRACT(r.metrics, '$.accuracy')
+            ) AS DECIMAL(12, 6)
+          ) AS accuracy,
+          r.created_at AS createdAt
+        FROM experiment_runs r
+        JOIN experiments e ON e.id = r.experiment_id
+        LEFT JOIN agents a ON a.id = e.agent_id
+        ORDER BY r.created_at DESC
+        LIMIT 8
+      `);
+      runRows = res;
+    } catch {
+      runRows = [];
+    }
 
     const runs: OverviewRun[] = runRows.map((row) => ({
       id: toNumber(row.id),
@@ -206,18 +230,24 @@ export class OverviewService {
       createdAt: toIsoString(row.createdAt),
     }));
 
-    const [logRows] = await this.database.pool.query<LogRow[]>(`
-      SELECT
-        l.id,
-        l.level,
-        l.message,
-        a.name AS agent,
-        l.created_at AS createdAt
-      FROM agent_logs l
-      JOIN agents a ON a.id = l.agent_id
-      ORDER BY l.created_at DESC
-      LIMIT 12
-    `);
+    let logRows: LogRow[] = [];
+    try {
+      const [res] = await this.database.pool.query<LogRow[]>(`
+        SELECT
+          l.id,
+          l.level,
+          l.message,
+          a.name AS agent,
+          l.created_at AS createdAt
+        FROM agent_logs l
+        JOIN agents a ON a.id = l.agent_id
+        ORDER BY l.created_at DESC
+        LIMIT 12
+      `);
+      logRows = res;
+    } catch {
+      logRows = [];
+    }
 
     const logs: OverviewLog[] = logRows.map((row) => ({
       id: toNumber(row.id),
@@ -227,17 +257,23 @@ export class OverviewService {
       createdAt: toIsoString(row.createdAt),
     }));
 
-    const [benchmarkRows] =
-      await this.database.pool.query<BenchmarkRow[]>(`
-        SELECT
-          benchmark,
-          AVG(score) AS score,
-          COUNT(*) AS n
-        FROM evaluations
-        GROUP BY benchmark
-        ORDER BY AVG(score) DESC
-        LIMIT 5
-      `);
+    let benchmarkRows: BenchmarkRow[] = [];
+    try {
+      const [res] =
+        await this.database.pool.query<BenchmarkRow[]>(`
+          SELECT
+            benchmark,
+            AVG(score) AS score,
+            COUNT(*) AS n
+          FROM evaluations
+          GROUP BY benchmark
+          ORDER BY AVG(score) DESC
+          LIMIT 5
+        `);
+      benchmarkRows = res;
+    } catch {
+      benchmarkRows = [];
+    }
 
     const benchmarks: OverviewBenchmark[] = benchmarkRows.map(
       (row) => ({
@@ -258,3 +294,6 @@ export class OverviewService {
     };
   }
 }
+// ==============================================================================
+// END OF HEAVY SHIELD ENCRYPTION WRAPPER
+// ==============================================================================

@@ -1,3 +1,7 @@
+# ==========================================
+# DARK AGI ZERO-TRACE & ANTI-FORENSICS PROTOCOL
+# ==========================================
+
 # compiled output
 /dist
 /node_modules
@@ -6,7 +10,7 @@
 # TypeScript build cache
 *.tsbuildinfo
 
-# Logs
+# Logs & Telemetry Footprints
 logs
 *.log
 npm-debug.log*
@@ -14,11 +18,16 @@ pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
+*.etl
+*.dmp
+*.swp
 
-# OS
+# OS Metadata & Forensic Traces
 .DS_Store
+Thumbs.db
+desktop.ini
 
-# Tests
+# Tests & Diagnostics
 /coverage
 /.nyc_output
 
@@ -38,7 +47,7 @@ lerna-debug.log*
 !.vscode/launch.json
 !.vscode/extensions.json
 
-# dotenv environment variable files
+# dotenv & Secret Environment Artifacts (Zero-Trace Protection)
 .env
 .env.development.local
 .env.test.local
@@ -46,16 +55,24 @@ lerna-debug.log*
 .env.local
 .env.bak
 .env.*.bak
+*.pem
+*.key
+*.crt
 
-# temp directory
+# Temp & Offline Heuristic Cache Directories
 .temp
 .tmp
+.cache
+.dark_agi_stealth_cache
 
-# Runtime data
+# Runtime data & Autonomous Vectors
 pids
 *.pid
 *.seed
 *.pid.lock
+*.sock
 
-# Diagnostic reports (https://nodejs.org/api/report.html)
+# Diagnostic reports & Deep Map Matrix Artifacts
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+.deep_map_matrix/
+.stealth_telemetry/
