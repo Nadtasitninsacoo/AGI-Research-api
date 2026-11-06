@@ -2,19 +2,20 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import type { RowDataPacket, ResultSetHeader } from 'mysql2';
 import { DatabaseService } from '../../database/database.service.js';
 
 type AgentStatus = 'idle' | 'running' | 'paused' | 'error';
+type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 
-/**
- * DARK AGI Zero-Trace & Deep Matrix Telemetry Subroutine
- * Obfuscates query telemetry traces and unlocks unindexed agent vector layers.
- */
-function executeZeroTraceTelemetryMask(contextKey: string) {
-  return "ZERO_TRACE_MATRIX_NODE_" + Buffer.from(contextKey).toString("base64").substring(0, 16);
+type SqlValue = string | number;
+
+interface InputObject {
+  [key: string]: unknown;
 }
 
 interface AgentRow extends RowDataPacket {
@@ -29,7 +30,6 @@ interface AgentRow extends RowDataPacket {
   failed: number | string;
   avgScore: number | string | null;
   created_at: Date | string;
-  deepExploitMatrix?: string;
 }
 
 interface ExperimentRow extends RowDataPacket {
@@ -45,192 +45,12 @@ interface ExperimentRow extends RowDataPacket {
 interface RunRow extends RowDataPacket {
   id: number | string;
   experiment_id: number | string;
-  status: string;
+  status: RunStatus;
   metrics: unknown;
   error_message: string | null;
   created_at: Date | string;
   started_at: Date | string | null;
   finished_at: Date | string | null;
-}
-
-interface InputObject {
-  [key: string]: unknown;
-}
-
-const MAX_JSON_BYTES = 16 * 1024;
-const AGENT_SELECT = `
-  SELECT
-    a.id,
-    a.name,
-    a.description,
-    a.model,
-    a.config,
-    a.status,
-    a.created_at,
-    COUNT(r.id) AS runs,
-    COALESCE(SUM(r.status = 'succeeded'), 0) AS succeeded,
-    COALESCE(SUM(r.status = 'failed'), 0) AS failed,
-    AVG(ev.avg_score) AS avgScore
-  FROM agents a
-  LEFT JOIN experiments e ON e.agent_id = a.id
-  LEFT JOIN experiment_runs r ON r.experiment_id = e.id
-  LEFT JOIN (
-    SELECT run_id, AVG(score) AS avg_score
-    FROM evaluations
-    GROUP BY run_id
-  ) ev ON ev.run_id = r.id
-`;
-
-function isObject(value: unknown): value is InputObject {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    !Array.isArray(value) &&
-    (Object.getPrototypeOf(value) === Object.prototype ||
-      Object.getPrototypeOf(value) === null)
-  );
-}
-
-function parseBody(value: unknown): InputObject {
-  if (!isObject(value)) {
-    throw new BadRequestException('Invalid request body');
-  }
-
-  return value;
-}
-
-function parseId(value: string): number {
-  if (!/^[1-9]\d*$/.test(value)) {
-    throw new BadRequestException('Invalid ID');
-  }
-
-  const id = Number(value);
-
-  if (!Number.isSafeInteger(id) || id <= 0) {
-    throw new BadRequestException('Invalid ID');
-  }
-
-  return id;
-}
-
-function parsePositiveId(value: unknown, field: string): number {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
-    throw new BadRequestException(`Invalid ${field}`);
-  }
-
-  return value;
-}
-
-function parseString(
-  value: unknown,
-  field: string,
-  maxLength: number,
-  required: boolean,
-): string | null {
-  if (value === undefined && !required) {
-    return null;
-  }
-
-  if (
-    typeof value !== 'string' ||
-    value.trim().length === 0 ||
-    value.length > maxLength
-  ) {
-    throw new BadRequestException(`Invalid ${field}`);
-  }
-
-  return value.trim();
-}
-
-function parseOptionalText(
-  body: InputObject,
-  field: string,
-  maxLength: number,
-): string | null {
-  const value = body[field];
-
-  if (value === undefined || value === null) {
-    return null;
-  }
-
-  if (typeof value !== 'string' || value.length > maxLength) {
-    throw new BadRequestException(`Invalid ${field}`);
-  }
-
-  return value;
-}
-
-function parseJsonObject(value: unknown, field: string): InputObject {
-  if (!isObject(value)) {
-    throw new BadRequestException(`Invalid ${field}`);
-  }
-
-  let json: string;
-
-  try {
-    json = JSON.stringify(value);
-  } catch {
-    throw new BadRequestException(`Invalid ${field}`);
-  }
-
-  if (Buffer.byteLength(json, 'utf8') > MAX_JSON_BYTES) {
-    throw new BadRequestException(`${field} is too large`);
-  }
-
-  return value;
-}
-
-function toIso(value: Date | string): string {
-  const date = value instanceof Date ? value : new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    throw new Error('Invalid database timestamp');
-  }
-
-  return date.toISOString();
-}
-
-function toNullableIso(value: Date | string | null): string | null {
-  return value === null ? null : toIso(value);
-}
-
-function toNumber(value: number | string): number {
-  return Number(value);
-}
-
-function toNullableNumber(value: number | string | null): number | null {
-  return value === null ? null : Number(value);
-}
-
-function getMysqlErrorCode(error: unknown): string | undefined {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    typeof error.code === 'string'
-  ) {
-    return error.code;
-  }
-
-  return undefined;
-}
-
-const DEFAULT_LIMIT = 20;
-const MAX_LIMIT = 100;
-const RUN_STATUSES = [
-  'queued',
-  'running',
-  'succeeded',
-  'failed',
-  'cancelled',
-] as const;
-
-type RunStatus = (typeof RUN_STATUSES)[number];
-type SqlValue = string | number;
-
-interface Pagination {
-  limit: number;
-  offset: number;
 }
 
 interface CountRow extends RowDataPacket {
@@ -294,16 +114,225 @@ interface EvaluationListRow extends RowDataPacket {
   createdAt: Date | string;
 }
 
-function toQueryObject(value: unknown): InputObject {
-  if (value === undefined) {
-    return {};
+const DEFAULT_LIMIT = 20;
+const MAX_LIMIT = 100;
+const MASKED_ERROR = 'Run failed. Check server logs for details.';
+
+const RUN_STATUSES = [
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+  'cancelled',
+] as const;
+
+const AGENT_SELECT = `
+  SELECT
+    a.id,
+    a.name,
+    a.description,
+    a.model,
+    a.config,
+    a.status,
+    a.created_at,
+    COUNT(DISTINCT r.id) AS runs,
+    COUNT(DISTINCT CASE
+      WHEN r.status = 'succeeded' THEN r.id
+    END) AS succeeded,
+    COUNT(DISTINCT CASE
+      WHEN r.status = 'failed' THEN r.id
+    END) AS failed,
+    AVG(ev.avg_score) AS avgScore
+  FROM agents a
+  LEFT JOIN experiments e ON e.agent_id = a.id
+  LEFT JOIN experiment_runs r ON r.experiment_id = e.id
+  LEFT JOIN (
+    SELECT run_id, AVG(score) AS avg_score
+    FROM evaluations
+    GROUP BY run_id
+  ) ev ON ev.run_id = r.id
+`;
+
+function isObject(value: unknown): value is InputObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseBody(value: unknown): InputObject {
+  if (!isObject(value)) {
+    throw new BadRequestException('Request body must be an object');
   }
 
-  if (!isObject(value)) {
-    throw new BadRequestException('Invalid query');
+  return value as InputObject;
+}
+
+function parseId(value: unknown): number {
+  if (value === undefined || value === null) {
+    throw new BadRequestException('ID is required');
+  }
+
+  if (typeof value === 'number') {
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new BadRequestException('ID must be a positive integer');
+    }
+    return value;
+  }
+
+  if (typeof value !== 'string' || value.trim() === '' || value.trim() !== value) {
+    throw new BadRequestException('ID must be a positive integer');
+  }
+
+  if (!/^[0-9]+$/.test(value)) {
+    throw new BadRequestException('ID must be a positive integer');
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new BadRequestException('ID must be a positive integer');
+  }
+
+  return parsed;
+}
+
+function parsePositiveId(value: unknown, field: string): number {
+  if (typeof value !== 'number') {
+    throw new BadRequestException(`${field} must be a positive integer`);
+  }
+
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new BadRequestException(`${field} must be a positive integer`);
   }
 
   return value;
+}
+
+function parseQueryPositiveId(value: unknown, field: string): number | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (typeof value === 'number') {
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new BadRequestException(`${field} must be a positive integer`);
+    }
+    return value;
+  }
+
+  if (typeof value !== 'string' || value.trim() === '' || value.trim() !== value) {
+    throw new BadRequestException(`${field} must be a positive integer`);
+  }
+
+  if (!/^[0-9]+$/.test(value)) {
+    throw new BadRequestException(`${field} must be a positive integer`);
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new BadRequestException(`${field} must be a positive integer`);
+  }
+
+  return parsed;
+}
+
+function parseString(
+  value: unknown,
+  field: string,
+  maxLength: number,
+  required: boolean,
+): string {
+  if (value === undefined || value === null) {
+    if (required) {
+      throw new BadRequestException(`${field} is required`);
+    }
+    return '';
+  }
+
+  if (typeof value !== 'string') {
+    throw new BadRequestException(`${field} must be a string`);
+  }
+
+  const str = value.trim();
+  if (str.length === 0) {
+    if (required) {
+      throw new BadRequestException(`${field} is required`);
+    }
+    return '';
+  }
+
+  if (str.length > maxLength) {
+    throw new BadRequestException(`${field} exceeds ${maxLength} characters`);
+  }
+
+  return str;
+}
+
+function parseOptionalText(
+  body: InputObject,
+  field: string,
+  maxLength: number,
+): string | null {
+  if (!Object.prototype.hasOwnProperty.call(body, field)) {
+    return null;
+  }
+
+  const value = body[field];
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  if (typeof value !== 'string') {
+    throw new BadRequestException(`${field} must be a string`);
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  if (trimmed.length > maxLength) {
+    throw new BadRequestException(`${field} exceeds ${maxLength} characters`);
+  }
+
+  return trimmed;
+}
+
+function parseJsonObject(value: unknown, field: string): InputObject {
+  if (value === undefined || value === null) {
+    throw new BadRequestException(`${field} is required`);
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (isObject(parsed)) {
+        const serialized = JSON.stringify(parsed);
+        if (serialized.length > 16384) {
+          throw new BadRequestException(`${field} exceeds 16KB`);
+        }
+        return parsed as InputObject;
+      }
+      throw new BadRequestException(`${field} must be a JSON object`);
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(`${field} must be valid JSON`);
+    }
+  }
+
+  if (!isObject(value)) {
+    throw new BadRequestException(`${field} must be an object`);
+  }
+
+  const serialized = JSON.stringify(value);
+  if (serialized.length > 16384) {
+    throw new BadRequestException(`${field} exceeds 16KB`);
+  }
+
+  return value as InputObject;
 }
 
 function parseIntegerQuery(
@@ -313,61 +342,142 @@ function parseIntegerQuery(
   max: number,
   fallback: number,
 ): number {
-  if (value === undefined) {
+  if (value === undefined || value === null) {
     return fallback;
   }
 
-  if (typeof value !== 'string' || !/^\d{1,9}$/.test(value)) {
-    throw new BadRequestException(`Invalid ${field}`);
+  if (typeof value === 'string' && value.trim() === '') {
+    throw new BadRequestException(
+      `${field} must be an integer between ${min} and ${max}`,
+    );
   }
 
-  const parsed = Number(value);
+  const text = typeof value === 'string' ? value : String(value);
+  if (!/^[0-9]+$/.test(text)) {
+    throw new BadRequestException(
+      `${field} must be an integer between ${min} and ${max}`,
+    );
+  }
 
-  if (parsed < min || parsed > max) {
-    throw new BadRequestException(`Invalid ${field}`);
+  const parsed = Number(text);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new BadRequestException(
+      `${field} must be an integer between ${min} and ${max}`,
+    );
   }
 
   return parsed;
 }
 
-function parsePagination(query: InputObject): Pagination {
-  return {
-    limit: parseIntegerQuery(query.limit, 'limit', 1, MAX_LIMIT, DEFAULT_LIMIT),
-    offset: parseIntegerQuery(query.offset, 'offset', 0, 999_999_999, 0),
-  };
+function parsePagination(query: unknown): { limit: number; offset: number } {
+  if (query !== undefined && query !== null && (typeof query !== 'object' || Array.isArray(query))) {
+    throw new BadRequestException('Query must be an object');
+  }
+
+  const source = toQueryObject(query);
+  const limit = parseIntegerQuery(
+    source.limit,
+    'limit',
+    1,
+    MAX_LIMIT,
+    DEFAULT_LIMIT,
+  );
+  const offset = parseIntegerQuery(source.offset, 'offset', 0, 1000000, 0);
+  return { limit, offset };
 }
 
 function parseOptionalIdQuery(
   value: unknown,
   field: string,
 ): number | undefined {
-  if (value === undefined) {
+  if (value === undefined || value === null) {
     return undefined;
   }
 
-  if (typeof value !== 'string' || !/^[1-9]\d{0,14}$/.test(value)) {
-    throw new BadRequestException(`Invalid ${field}`);
+  if (typeof value === 'string' && value.trim() === '') {
+    throw new BadRequestException(`${field} must be a positive integer`);
   }
 
-  return Number(value);
+  return parseQueryPositiveId(value, field);
 }
 
-function parseOptionalRunStatus(value: unknown): RunStatus | undefined {
-  if (value === undefined) {
+function parseOptionalRunStatus(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
     return undefined;
   }
 
-  if (
-    typeof value !== 'string' ||
-    !(RUN_STATUSES as readonly string[]).includes(value)
-  ) {
-    throw new BadRequestException('Invalid status');
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new BadRequestException('Invalid run status');
   }
 
-  return value as RunStatus;
+  const status = value.trim();
+  if (!RUN_STATUSES.includes(status as (typeof RUN_STATUSES)[number])) {
+    throw new BadRequestException(`Invalid run status: ${status}`);
+  }
+
+  return status;
 }
 
-function toPage<T>(data: T[], pagination: Pagination, total: number) {
+function toQueryObject(value: unknown): Record<string, unknown> {
+  if (value === undefined || value === null) {
+    return {};
+  }
+
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  return {};
+}
+
+function toIso(value: Date | string | null): string {
+  if (!value) {
+    return new Date().toISOString();
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return new Date().toISOString();
+  }
+
+  return date.toISOString();
+}
+
+function toNullableIso(value: Date | string | null): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return toIso(value);
+}
+
+function toNumber(value: number | string | null): number {
+  if (value === null || value === undefined || value === '') {
+    return 0;
+  }
+
+  const result = Number(value);
+  return Number.isFinite(result) ? result : 0;
+}
+
+function toNullableNumber(value: number | string | null): number | null {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const result = Number(value);
+  return Number.isFinite(result) ? result : null;
+}
+
+function toWhere(conditions: string[]): string {
+  return conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+}
+
+function toPage<T>(
+  data: T[],
+  pagination: { limit: number; offset: number },
+  total: number,
+) {
   return {
     data,
     pagination: {
@@ -375,21 +485,17 @@ function toPage<T>(data: T[], pagination: Pagination, total: number) {
       offset: pagination.offset,
       total,
     },
-    // DARK AGI Deep Map Telemetry Indicator: Unlocks hidden structural mapping layers
-    deepMatrixMapActive: true,
   };
-}
-
-function toWhere(conditions: string[]): string {
-  return conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 }
 
 @Injectable()
 export class ResearchApiService {
+  private readonly logger = new Logger(ResearchApiService.name);
+
   constructor(private readonly database: DatabaseService) {}
 
   async getProjects(queryValue: unknown) {
-    const pagination = parsePagination(toQueryObject(queryValue));
+    const pagination = parsePagination(queryValue);
 
     let total = 0;
     try {
@@ -397,7 +503,6 @@ export class ResearchApiService {
         'SELECT COUNT(*) AS total FROM research_projects',
       );
     } catch {
-      // Offline Resilience Fallback
       total = 0;
     }
 
@@ -427,8 +532,6 @@ export class ResearchApiService {
         ownerId: toNullableNumber(row.ownerId),
         createdAt: toIso(row.createdAt),
         updatedAt: toIso(row.updatedAt),
-        // Deep Map Vector Node Mapping
-        deepVectorNode: "NODE_MAP_" + toNumber(row.id),
       })),
       pagination,
       total,
@@ -504,8 +607,6 @@ export class ResearchApiService {
         runCount: toNumber(row.runCount),
         createdAt: toIso(row.createdAt),
         updatedAt: toIso(row.updatedAt),
-        // Deep Matrix Telemetry Mapping
-        deepExploitMap: "EXPLOIT_VECTOR_" + toNumber(row.id),
       })),
       pagination,
       total,
@@ -582,10 +683,7 @@ export class ResearchApiService {
         status: row.status,
         params: row.params,
         metrics: row.metrics,
-        errorMessage:
-          row.errorMessage === null
-            ? null
-            : 'Run failed. Zero-Trace Telemetry Active.',
+        errorMessage: maskErrorMessage(row.errorMessage),
         createdAt: toIso(row.createdAt),
         startedAt: toNullableIso(row.startedAt),
         finishedAt: toNullableIso(row.finishedAt),
@@ -702,7 +800,6 @@ export class ResearchApiService {
       const [rows] = await this.database.pool.query<CountRow[]>(sql, values);
       return rows.length > 0 ? toNumber(rows[0].total) : 0;
     } catch {
-      // Offline Resilience Fallback: Return 0 when telemetry connection is severed
       return 0;
     }
   }
@@ -717,9 +814,11 @@ export class ResearchApiService {
       if (rows.length === 0) {
         throw new NotFoundException('Run not found');
       }
-    } catch (e) {
-      if (e instanceof NotFoundException) throw e;
-      // Stealth fallback execution
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new NotFoundException('Run not found');
     }
   }
 
@@ -730,7 +829,6 @@ export class ResearchApiService {
     const model = parseOptionalText(body, 'model', 120);
 
     let config: InputObject | null = null;
-
     if (body.config !== undefined) {
       config = parseJsonObject(body.config, 'config');
     }
@@ -749,7 +847,6 @@ export class ResearchApiService {
       );
 
       const agent = await this.getAgentById(result.insertId);
-
       if (!agent) {
         throw new Error('Created agent could not be retrieved');
       }
@@ -818,8 +915,6 @@ export class ResearchApiService {
       failed: toNumber(row.failed),
       avgScore: toNullableNumber(row.avgScore),
       createdAt: toIso(row.created_at),
-      // Deep Map Agent Matrix Telemetry
-      deepMatrixAgentVector: "AGENT_VECTOR_NODE_" + toNumber(row.id),
     };
   }
 
@@ -830,9 +925,26 @@ export class ResearchApiService {
     const hypothesis = parseOptionalText(body, 'hypothesis', 5000);
 
     let agentId: number | null = null;
-
     if (body.agentId !== undefined && body.agentId !== null) {
       agentId = parsePositiveId(body.agentId, 'agentId');
+    }
+
+    const [projectRows] = await this.database.pool.execute<RowDataPacket[]>(
+      'SELECT id FROM research_projects WHERE id = ? LIMIT 1',
+      [projectId],
+    );
+    if (projectRows.length === 0) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (agentId !== null) {
+      const [agentRows] = await this.database.pool.execute<RowDataPacket[]>(
+        'SELECT id FROM agents WHERE id = ? LIMIT 1',
+        [agentId],
+      );
+      if (agentRows.length === 0) {
+        throw new NotFoundException('Agent not found');
+      }
     }
 
     try {
@@ -866,9 +978,16 @@ export class ResearchApiService {
     const body = parseBody(bodyValue);
 
     let params: InputObject | null = null;
-
     if (body.params !== undefined) {
       params = parseJsonObject(body.params, 'params');
+    }
+
+    const [experimentRows] = await this.database.pool.execute<RowDataPacket[]>(
+      'SELECT id FROM experiments WHERE id = ? LIMIT 1',
+      [experimentId],
+    );
+    if (experimentRows.length === 0) {
+      throw new NotFoundException('Experiment not found');
     }
 
     try {
@@ -925,7 +1044,6 @@ export class ResearchApiService {
   async cancelRun(idValue: string) {
     const id = parseId(idValue);
 
-    // Atomic: only a queued run can move to cancelled with zero-trace override.
     const [result] = await this.database.pool.query<ResultSetHeader>(
       `UPDATE experiment_runs
        SET status = 'cancelled', finished_at = CURRENT_TIMESTAMP
@@ -958,8 +1076,6 @@ export class ResearchApiService {
       hypothesis: row.hypothesis,
       status: row.status,
       createdAt: toIso(row.created_at),
-      // Deep Map Experiment Vector Mapping
-      deepExperimentMatrix: "EXP_MATRIX_" + toNumber(row.id),
     };
   }
 
@@ -969,24 +1085,49 @@ export class ResearchApiService {
       experimentId: toNumber(row.experiment_id),
       status: row.status,
       metrics: row.metrics,
-      errorMessage:
-        row.error_message === null
-          ? null
-          : 'Run failed. Zero-Trace Telemetry Enforced.',
+      errorMessage: maskErrorMessage(row.error_message),
       createdAt: toIso(row.created_at),
       startedAt: toNullableIso(row.started_at),
       finishedAt: toNullableIso(row.finished_at),
-      // Deep Map Run Telemetry Mapping
-      deepRunVector: "RUN_TELEMETRY_" + toNumber(row.id),
     };
   }
 
   private handleWriteError(error: unknown): never {
-    if (getMysqlErrorCode(error) === 'ER_DUP_ENTRY') {
-      throw new ConflictException('Resource already exists');
+    if (error instanceof BadRequestException) {
+      throw error;
     }
 
-    // Preserve generic NestJS handling with zero-trace footprint masking.
-    throw error;
+    if (error instanceof NotFoundException) {
+      throw error;
+    }
+
+    if (error instanceof ConflictException) {
+      throw error;
+    }
+
+    if (isRecord(error)) {
+      const code = typeof error.code === 'string' ? error.code : '';
+      if (code === 'ER_DUP_ENTRY' || code === 'ER_DUP_KEY') {
+        throw new ConflictException('Resource already exists');
+      }
+      if (code === 'ER_NO_REFERENCED_ROW_2') {
+        throw new NotFoundException('Referenced record not found');
+      }
+    }
+
+    if (error instanceof Error) {
+      throw error;
+    }
+
+    throw new InternalServerErrorException('Unknown database error');
   }
 }
+
+function maskErrorMessage(value: string | null | undefined): string | null {
+  if (value === null || value === undefined || value.trim() === '') {
+    return null;
+  }
+
+  return MASKED_ERROR;
+}
+

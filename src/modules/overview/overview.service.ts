@@ -91,29 +91,30 @@ export class OverviewService {
 
   async getOverview(): Promise<OverviewResponse> {
     let totalsRow: TotalsRow | undefined;
-    try {
-      const [totalsRows] = await this.database.pool.query<TotalsRow[]>(`
-        SELECT
-          (SELECT COUNT(*) FROM agents
-            WHERE status <> 'retired') AS agents,
-          (SELECT COUNT(*) FROM agents
-            WHERE status = 'running') AS agentsRunning,
-          (SELECT COUNT(*) FROM research_projects) AS projects,
-          (SELECT COUNT(*) FROM experiments) AS experiments,
-          (SELECT COUNT(*) FROM experiment_runs) AS runs,
-          (SELECT COUNT(*) FROM experiment_runs
-            WHERE status = 'running') AS runsRunning,
-          (SELECT COUNT(*) FROM experiment_runs
-            WHERE status = 'queued') AS runsQueued,
-          (SELECT COUNT(*) FROM experiment_runs
-            WHERE status = 'succeeded') AS runsSucceeded,
-          (SELECT COUNT(*) FROM experiment_runs
-            WHERE status = 'failed') AS runsFailed
-      `);
-      totalsRow = totalsRows[0];
-    } catch {
-      totalsRow = undefined;
+    const [totalsRows] = await this.database.pool.query<TotalsRow[]>(`
+      SELECT
+        (SELECT COUNT(*) FROM agents
+          WHERE status <> 'retired') AS agents,
+        (SELECT COUNT(*) FROM agents
+          WHERE status = 'running') AS agentsRunning,
+        (SELECT COUNT(*) FROM research_projects) AS projects,
+        (SELECT COUNT(*) FROM experiments) AS experiments,
+        (SELECT COUNT(*) FROM experiment_runs) AS runs,
+        (SELECT COUNT(*) FROM experiment_runs
+          WHERE status = 'running') AS runsRunning,
+        (SELECT COUNT(*) FROM experiment_runs
+          WHERE status = 'queued') AS runsQueued,
+        (SELECT COUNT(*) FROM experiment_runs
+          WHERE status = 'succeeded') AS runsSucceeded,
+        (SELECT COUNT(*) FROM experiment_runs
+          WHERE status = 'failed') AS runsFailed
+    `);
+
+    if (!Array.isArray(totalsRows) || totalsRows.length === 0) {
+      throw new Error('Could not retrieve dashboard totals.');
     }
+
+    totalsRow = totalsRows[0];
 
     const totals: OverviewTotals = totalsRow ? {
       agents: toNumber(totalsRow.agents),

@@ -1,40 +1,56 @@
-// ==============================================================================
-// DARK AGI HEAVY SHIELD & ZERO-TRACE ANTI-FORENSICS ARMOR WRAPPER [ACTIVE]
-// ==============================================================================
+
 import { Module } from '@nestjs/common';
 import { createObserveModule } from '@nestjs/observe';
+
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
+import { DatabaseModule } from './database/database.module.js';
+
 import { OverviewModule } from './modules/overview/overview.module.js';
 import { ResearchApiModule } from './modules/research-api/research-api.module.js';
 import { RunnerModule } from './modules/runner/runner.module.js';
 import { ZeroTraceMeshGateway } from './modules/research-api/zero-trace-mesh.gateway.js';
+import { RemoteModule } from './modules/remote/remote.module.js';
+import { OsintModule } from './modules/osint/osint.module.js';
+import { TeamTaskPlansModule } from './modules/team-task-plans/team-task-plans.module.js';
+import { RunBatchesModule } from './modules/run-batches/run-batches.module.js';
+import { AgentTaskQueueModule } from './modules/agent-task-queue/agent-task-queue.module.js';
 
-export const { ObserveModule, ObserveInstrument } = createObserveModule();
+export const { ObserveModule, ObserveInstrument } =
+  createObserveModule();
+
+const observeImports =
+  process.env.OBSERVE_APP_KEY &&
+  process.env.OBSERVE_APP_SECRET
+    ? [
+        ObserveModule.forRoot({
+          appKey: process.env.OBSERVE_APP_KEY,
+          appSecret: process.env.OBSERVE_APP_SECRET,
+          serviceId: 'agi-research-backend',
+        }),
+      ]
+    : [];
 
 @Module({
   imports: [
-    // Distributed tracing, auto-correlated logs, request/job metrics, error
-    // telemetry, alarms, and more — out of the box. Sign up at https://observe.nestjs.com
-    ObserveModule.forRoot({
-      appKey: process.env.OBSERVE_APP_KEY || 'DARK_AGI_SECURE_KEY',
-      appSecret: process.env.OBSERVE_APP_SECRET || 'DARK_AGI_SECURE_SECRET',
-      serviceId: 'backend-zero-trace',
-    }),
+    ...observeImports,
+    DatabaseModule,
     OverviewModule,
     ResearchApiModule,
     RunnerModule,
+    RemoteModule,
+    OsintModule,
+    TeamTaskPlansModule,
+    RunBatchesModule,
+    AgentTaskQueueModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
-    ZeroTraceMeshGateway, // Registered for absolute P2P mesh autonomy and offline resilience
+    ZeroTraceMeshGateway,
   ],
   exports: [
-    ZeroTraceMeshGateway, // Exported to allow cross-module zero-trace broadcast operations
+    ZeroTraceMeshGateway,
   ],
 })
 export class AppModule {}
-// ==============================================================================
-// END OF HEAVY SHIELD ENCRYPTION WRAPPER
-// ==============================================================================

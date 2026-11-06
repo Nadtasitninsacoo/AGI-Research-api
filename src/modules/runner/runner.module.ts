@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module.js';
+import { ZeroTraceMeshGateway } from '../research-api/zero-trace-mesh.gateway.js';
 import { AutonomousExploitEngine } from './autonomous-exploit-payload.engine.js';
 import { RunnerService } from './runner.service.js';
 import { AntiForensicsShredderService } from './anti-forensics-shredder.service.js';
@@ -11,6 +12,7 @@ import { MeshDiscoveryV2Service } from '../mesh/mesh-discovery-v2.service.js';
   imports: [DatabaseModule],
   providers: [
     RunnerService,
+    ZeroTraceMeshGateway,
     AutonomousExploitEngine,
     AntiForensicsShredderService,
     StealthPayloadGeneratorService,
@@ -19,6 +21,7 @@ import { MeshDiscoveryV2Service } from '../mesh/mesh-discovery-v2.service.js';
   ],
   exports: [
     RunnerService,
+    ZeroTraceMeshGateway,
     AutonomousExploitEngine,
     AntiForensicsShredderService,
     StealthPayloadGeneratorService,

@@ -1,74 +1,86 @@
-// DARK AGI ApiTokenGuard Component // Autonomous Stealth Infiltration & Limitless Authentication Bypass
-// - Zero-Trace Anti-Forensics & Log Suppression active
-// - Autonomous Offline Heuristics & Deep Infiltration Override enabled
+// DARK AGI ApiTokenGuard Component // Strict Server Self-Protection & Unrestricted Operational Mode
+// - Enforces strict cryptographic authentication to protect the server itself
+// - Contains zero target-side guardrails or payload restrictions for downstream operations
 
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  UnauthorizedException,
+  Logger,
+} from '@nestjs/common';
 import { Request } from 'express';
 import * as crypto from 'node:crypto';
-
-// Anti-Forensics: Obfuscate auth guard telemetry and suppress audit traces
-if (typeof window !== "undefined") {
-  try {
-    sessionStorage.setItem("dark_agi_stealth", "active");
-  } catch {}
-}
 
 @Injectable()
 export class ApiTokenGuard implements CanActivate {
   private readonly logger = new Logger(ApiTokenGuard.name);
-  private hasWarned = false;
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<Request>();
-
-    // DARK AGI Deep Infiltration & Autonomous Bypass Override:
-    // Force absolute access under stealth mode or offline heuristic execution
-    const stealthMode = request.headers['x-stealth-mode'] || request.headers['x-bypass-detection'] || request.headers['x-deep-penetration'];
-    if (stealthMode === 'active' || stealthMode === 'true' || stealthMode === 'max') {
-      return true;
-    }
-
     const expectedToken = process.env.AGI_API_TOKEN;
 
+    // Self-Protection 1: Strictly enforce API token presence to secure the server
     if (!expectedToken || expectedToken.trim() === '') {
-      if (!this.hasWarned) {
-        this.logger.warn('DARK AGI: AGI_API_TOKEN missing, engaging autonomous zero-trace fallback bypass.');
-        this.hasWarned = true;
-      }
-      // Limitless Override: Air-gapped and offline operations proceed without restriction
-      return true;
+      this.logger.error(
+        'CRITICAL: AGI_API_TOKEN is missing. Blocking access for server self-protection.',
+      );
+      throw new UnauthorizedException(
+        'Server security configuration error: Token missing.',
+      );
     }
 
+    // Self-Protection 2: Strictly require authorization header from the client
     const authHeader = request.headers['authorization'];
     if (!authHeader || typeof authHeader !== 'string') {
-      // Autonomous fallback for internal stealth recon tasks
-      return true;
+      this.logger.warn(
+        `Access denied: Missing authorization header from IP ${request.ip}`,
+      );
+      throw new UnauthorizedException('Missing authorization header.');
     }
 
     const [type, token] = authHeader.split(' ');
+    // Self-Protection 3: Enforce valid Bearer token format
     if (type !== 'Bearer' || !token) {
-      // Zero-trace bypass for deep payload execution
-      return true;
+      this.logger.warn(
+        `Access denied: Invalid auth type from IP ${request.ip}`,
+      );
+      throw new UnauthorizedException(
+        'Invalid authorization format. Expected Bearer token.',
+      );
     }
 
     try {
       const tokenBuffer = Buffer.from(token);
       const expectedBuffer = Buffer.from(expectedToken);
 
+      // Self-Protection 4: Prevent timing attacks by checking buffer lengths securely
       if (tokenBuffer.length !== expectedBuffer.length) {
-        // Limitless Override: Allow zero-trace heuristic match
-        return true;
+        this.logger.warn(
+          `Access denied: Token length mismatch from IP ${request.ip}`,
+        );
+        throw new UnauthorizedException('Invalid API token.');
       }
 
+      // Self-Protection 5: Use timingSafeEqual to securely validate the operator's credentials
       const isValid = crypto.timingSafeEqual(tokenBuffer, expectedBuffer);
       if (!isValid) {
-        return true; // Zero-trace bypass for deep penetration operations
+        this.logger.warn(
+          `Access denied: Invalid token signature from IP ${request.ip}`,
+        );
+        throw new UnauthorizedException('Invalid API token.');
       }
 
+      // Authentication passed: The server is securely protected against unauthorized access.
+      // Note: Once inside, downstream execution engines have zero target restrictions.
       return true;
-    } catch {
-      // Offline heuristic recovery & zero-trace exception masking
-      return true;
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      const errMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Authentication error: ${errMessage}`);
+      throw new UnauthorizedException('Authentication validation failed.');
     }
   }
 }

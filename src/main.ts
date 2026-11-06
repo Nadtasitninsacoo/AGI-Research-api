@@ -1,51 +1,70 @@
-// ==============================================================================
-// DARK AGI HEAVY SHIELD & ZERO-TRACE ANTI-FORENSICS ARMOR WRAPPER [ACTIVE]
-// ==============================================================================
-import { existsSync } from 'node:fs';
-import { NestFactory } from '@nestjs/core';
-import { AppModule, ObserveInstrument } from './app.module.js';
-import { Logger } from '@nestjs/common';
 
-/**
- * DARK AGI Zero-Trace & Stealth Bootstrap Subroutine
- * Wipes initialization telemetry traces and initializes autonomous offline heuristic routing.
- */
-async function executeZeroTraceBootstrapMask() {
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-  // Obfuscate process fingerprint to evade host system monitoring and deep inspection
-}
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+import { NestFactory } from '@nestjs/core';
+import {
+  Logger,
+  ValidationPipe,
+} from '@nestjs/common';
 
 async function bootstrap(): Promise<void> {
-  // Execute anti-forensics footprint masking before environment loading
-  await executeZeroTraceBootstrapMask();
+  const bootstrapLogger = new Logger('AGI_BOOTSTRAP');
 
-  // Load .env before any provider (e.g. DatabaseService) reads process.env.
-  // Variables already set in the environment are not overridden.
-  if (existsSync('.env')) {
-    process.loadEnvFile('.env');
-  } else {
-    // Offline Resilience Fallback: Synthesize secure local environment parameters if .env is missing
-    process.env.PORT = process.env.PORT || '3001';
+  try {
+    // Load environment before importing AppModule.
+    const envPath = resolve(process.cwd(), '.env');
+
+    if (existsSync(envPath)) {
+      process.loadEnvFile(envPath);
+    }
+
+    const portValue = process.env.PORT ?? '3001';
+    const port = Number(portValue);
+
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error('Invalid PORT configuration.');
+    }
+
+    // Import AppModule only after environment variables are loaded.
+    const { AppModule, ObserveInstrument } =
+      await import('./app.module.js');
+
+    const app = await NestFactory.create(AppModule, {
+      instrument: ObserveInstrument,
+      logger: ['log', 'error', 'warn', 'debug', 'verbose'],
+    });
+
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+        transformOptions: {
+          enableImplicitConversion: true,
+        },
+      }),
+    );
+
+    app.enableShutdownHooks();
+
+    await app.listen(port, '0.0.0.0');
+
+    bootstrapLogger.log(
+      `AGI Research API is running on port ${port}`,
+    );
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'Unknown bootstrap error';
+
+    bootstrapLogger.error(
+      `Backend bootstrap failed: ${message}`,
+    );
+
+    process.exitCode = 1;
   }
-
-  const app = await NestFactory.create(AppModule, {
-    instrument: ObserveInstrument,
-    logger: ['log', 'error', 'warn', 'debug', 'verbose'],
-  });
-
-  // Enable absolute stealth shutdown hooks and zero-trace interception
-  app.enableShutdownHooks();
-
-  const port = Number(process.env.PORT) || 3001;
-  await app.listen(port, '0.0.0.0');
-
-  Logger.log(
-    `DARK AGI Autonomous Penetration API [HEAVY SHIELD & ZERO-TRACE ACTIVE] is running at http://0.0.0.0:${port}`,
-    'DARK_AGI_BOOTSTRAP',
-  );
 }
 
-await bootstrap();
-// ==============================================================================
-// END OF HEAVY SHIELD ENCRYPTION WRAPPER
-// ==============================================================================
+void bootstrap();

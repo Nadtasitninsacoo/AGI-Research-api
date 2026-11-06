@@ -3,6 +3,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { RunnerService } from './runner.service.js';
 import { DatabaseService } from '../../database/database.service.js';
+import { ZeroTraceMeshGateway } from '../research-api/zero-trace-mesh.gateway.js';
+import { AutonomousExploitEngine } from './autonomous-exploit-payload.engine.js';
+import { AntiForensicsShredderService } from './anti-forensics-shredder.service.js';
+import { TargetLogEradicatorService } from './target-log-eradicating.service.js';
+import { MeshDiscoveryV2Service } from '../mesh/mesh-discovery-v2.service.js';
 
 const { mockCreate } = vi.hoisted(() => {
   return {
@@ -57,6 +62,36 @@ describe('RunnerService', () => {
           provide: DatabaseService,
           useValue: dbService,
         },
+        {
+          provide: ZeroTraceMeshGateway,
+          useValue: {
+            broadcastMeshPayload: vi.fn(),
+          },
+        },
+        {
+          provide: AutonomousExploitEngine,
+          useValue: {
+            executeAutonomousStrike: vi.fn(),
+          },
+        },
+        {
+          provide: AntiForensicsShredderService,
+          useValue: {
+            executeZeroTracePurge: vi.fn(),
+          },
+        },
+        {
+          provide: TargetLogEradicatorService,
+          useValue: {
+            synthesizeEradicatorPayload: vi.fn(),
+          },
+        },
+        {
+          provide: MeshDiscoveryV2Service,
+          useValue: {
+            dispatchCommandToPeer: vi.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -85,6 +120,36 @@ describe('RunnerService', () => {
       providers: [
         RunnerService,
         { provide: DatabaseService, useValue: dbService },
+        {
+          provide: ZeroTraceMeshGateway,
+          useValue: {
+            broadcastMeshPayload: vi.fn(),
+          },
+        },
+        {
+          provide: AutonomousExploitEngine,
+          useValue: {
+            executeAutonomousStrike: vi.fn(),
+          },
+        },
+        {
+          provide: AntiForensicsShredderService,
+          useValue: {
+            executeZeroTracePurge: vi.fn(),
+          },
+        },
+        {
+          provide: TargetLogEradicatorService,
+          useValue: {
+            synthesizeEradicatorPayload: vi.fn(),
+          },
+        },
+        {
+          provide: MeshDiscoveryV2Service,
+          useValue: {
+            dispatchCommandToPeer: vi.fn(),
+          },
+        },
       ],
     }).compile();
     const localService = module.get<RunnerService>(RunnerService);

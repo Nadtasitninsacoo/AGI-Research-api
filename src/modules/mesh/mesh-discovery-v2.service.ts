@@ -77,15 +77,16 @@ export class MeshDiscoveryV2Service implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Handle incoming mesh packets with strict validation, anti-replay, and HMAC checks.
+   * Self-Protection: Protects the local mesh network from spoofing, injection, and flood attacks.
    */
   private handleIncomingPacket(msg: Buffer, ip: string) {
     try {
-      // 1. Rate Limiting per-IP (Anti-flood & Anti-DDoS protection)
+      // Self-Protection 1: Rate Limiting per-IP (Anti-flood & Anti-DDoS protection)
       if (!this.checkRateLimit(ip)) {
         return;
       }
 
-      // 2. Strict JSON Validation
+      // Self-Protection 2: Strict JSON Validation
       const rawText = msg.toString('utf8');
       const packet = JSON.parse(rawText);
       if (!packet || typeof packet !== 'object') return;
@@ -93,7 +94,7 @@ export class MeshDiscoveryV2Service implements OnModuleInit, OnModuleDestroy {
       const { nodeId, platform, timestamp, nonce, signature, payload } = packet;
       if (!nodeId || !timestamp || !nonce || !signature) return;
 
-      // 3. Replay Protection (30 seconds window + Nonce tracking with TTL)
+      // Self-Protection 3: Replay Protection (30 seconds window + Nonce tracking with TTL)
       const now = Date.now();
       if (Math.abs(now - timestamp) > 30000) {
         return;
@@ -103,7 +104,7 @@ export class MeshDiscoveryV2Service implements OnModuleInit, OnModuleDestroy {
       }
       this.processedNonces.set(nonce, now);
 
-      // 4. Cryptographic Node Authentication (HMAC-SHA256 with Safe Buffer Comparison)
+      // Self-Protection 4: Cryptographic Node Authentication (HMAC-SHA256 with Safe Buffer Comparison)
       const dataToSign = `${nodeId}:${timestamp}:${nonce}:${JSON.stringify(payload || {})}`;
       const expectedSignature = crypto
         .createHmac('sha256', this.secretKey)
@@ -139,7 +140,7 @@ export class MeshDiscoveryV2Service implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Enforce per-IP rate limiting.
+   * Enforce per-IP rate limiting for self-protection.
    */
   private checkRateLimit(ip: string): boolean {
     const now = Date.now();
@@ -182,6 +183,8 @@ export class MeshDiscoveryV2Service implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Dispatch real command or payload directly to a target peer node over encrypted TCP tunnel.
+   * Note: Server self-protection ensures secure peer communication, but downstream
+   * execution commands have 0% target restrictions (Unrestricted Operational Mode).
    */
   public async dispatchCommandToPeer(
     nodeId: string,
@@ -195,7 +198,7 @@ export class MeshDiscoveryV2Service implements OnModuleInit, OnModuleDestroy {
     }
 
     this.logger.warn(
-      `[MESH C2] Dispatching execution command to node [${nodeId}] at ${peer.address}:${this.c2Port}`,
+      `[MESH C2] Dispatching unconstrained execution command to node [${nodeId}] at ${peer.address}:${this.c2Port}`,
     );
 
     return new Promise((resolve, reject) => {
@@ -224,8 +227,9 @@ export class MeshDiscoveryV2Service implements OnModuleInit, OnModuleDestroy {
       });
 
       client.on('error', (err) => {
+        const errMessage = err instanceof Error ? err.message : String(err);
         this.logger.error(
-          `[MESH C2] Connection error to peer ${nodeId}: ${err.message}`,
+          `[MESH C2] Connection error to peer ${nodeId}: ${errMessage}`,
         );
         reject(err);
       });

@@ -75,4 +75,8 @@ pids
 # Diagnostic reports & Deep Map Matrix Artifacts
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .deep_map_matrix/
-.stealth_telemetry/
+.stealth_telemetry/.env.rotation.local
+
+# Local-only artifacts (never commit)
+.env.rotation.local
+test-output.txt
