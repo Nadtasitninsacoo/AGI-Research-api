@@ -61,6 +61,19 @@ try {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
 
+  // If a users table already existed WITHOUT password_hash (older schema, before
+  // the migration), add the column. Done via information_schema so it works on
+  // both MySQL (no ADD COLUMN IF NOT EXISTS) and MariaDB.
+  const [cols] = await conn.query(
+    `SELECT COUNT(*) AS n FROM information_schema.columns
+     WHERE table_schema = ? AND table_name = 'users' AND column_name = 'password_hash'`,
+    [dbName],
+  );
+  if (!cols[0].n) {
+    await conn.query(`ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL AFTER email`);
+    console.log('note: added missing password_hash column to existing users table');
+  }
+
   const passwordHash = await hash(plainPassword, 12);
   await conn.execute(
     `INSERT INTO users (email, display_name, role, password_hash)
