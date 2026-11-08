@@ -80,3 +80,4 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 # Local-only artifacts (never commit)
 .env.rotation.local
 test-output.txt
+agi_research_backup_before_assessment.sql

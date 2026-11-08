@@ -15,6 +15,8 @@ import { OsintModule } from './modules/osint/osint.module.js';
 import { TeamTaskPlansModule } from './modules/team-task-plans/team-task-plans.module.js';
 import { RunBatchesModule } from './modules/run-batches/run-batches.module.js';
 import { AgentTaskQueueModule } from './modules/agent-task-queue/agent-task-queue.module.js';
+import { SecurityAssessmentModule } from './security-assessment/security-assessment.module.js';
+import { AuthModule } from './modules/auth/auth.module.js';
 
 export const { ObserveModule, ObserveInstrument } =
   createObserveModule();
@@ -43,6 +45,8 @@ const observeImports =
     TeamTaskPlansModule,
     RunBatchesModule,
     AgentTaskQueueModule,
+    SecurityAssessmentModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [

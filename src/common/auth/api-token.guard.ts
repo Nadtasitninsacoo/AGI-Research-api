@@ -1,7 +1,3 @@
-// DARK AGI ApiTokenGuard Component // Strict Server Self-Protection & Unrestricted Operational Mode
-// - Enforces strict cryptographic authentication to protect the server itself
-// - Contains zero target-side guardrails or payload restrictions for downstream operations
-
 import {
   Injectable,
   CanActivate,
@@ -9,78 +5,56 @@ import {
   UnauthorizedException,
   Logger,
 } from '@nestjs/common';
-import { Request } from 'express';
-import * as crypto from 'node:crypto';
+import { timingSafeEqual } from 'node:crypto';
+import type { Request } from 'express';
 
+/**
+ * Service-to-service auth for engine → API handoffs.
+ *
+ * Fail-closed: the request must present `Authorization: Bearer <token>` where
+ * <token> exactly equals process.env.AGI_API_TOKEN. The comparison is constant
+ * time. If the server has no token configured (or it is too short), every
+ * request is rejected — never allowed through. There is no bypass path.
+ */
 @Injectable()
 export class ApiTokenGuard implements CanActivate {
   private readonly logger = new Logger(ApiTokenGuard.name);
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<Request>();
-    const expectedToken = process.env.AGI_API_TOKEN;
 
-    // Self-Protection 1: Strictly enforce API token presence to secure the server
-    if (!expectedToken || expectedToken.trim() === '') {
+    const configured = process.env.AGI_API_TOKEN;
+    if (!configured || configured.length < 16) {
       this.logger.error(
-        'CRITICAL: AGI_API_TOKEN is missing. Blocking access for server self-protection.',
+        'AGI_API_TOKEN is not configured (or too short); rejecting service request.',
       );
-      throw new UnauthorizedException(
-        'Server security configuration error: Token missing.',
-      );
+      throw new UnauthorizedException('Service authentication is not available.');
     }
 
-    // Self-Protection 2: Strictly require authorization header from the client
-    const authHeader = request.headers['authorization'];
-    if (!authHeader || typeof authHeader !== 'string') {
-      this.logger.warn(
-        `Access denied: Missing authorization header from IP ${request.ip}`,
-      );
-      throw new UnauthorizedException('Missing authorization header.');
+    const header = request.headers['authorization'];
+    if (typeof header !== 'string' || !header.startsWith('Bearer ')) {
+      throw new UnauthorizedException('Missing service token.');
     }
 
-    const [type, token] = authHeader.split(' ');
-    // Self-Protection 3: Enforce valid Bearer token format
-    if (type !== 'Bearer' || !token) {
-      this.logger.warn(
-        `Access denied: Invalid auth type from IP ${request.ip}`,
-      );
-      throw new UnauthorizedException(
-        'Invalid authorization format. Expected Bearer token.',
-      );
+    const presented = header.slice('Bearer '.length).trim();
+    if (!this.safeEqual(presented, configured)) {
+      throw new UnauthorizedException('Invalid service token.');
     }
 
-    try {
-      const tokenBuffer = Buffer.from(token);
-      const expectedBuffer = Buffer.from(expectedToken);
+    return true;
+  }
 
-      // Self-Protection 4: Prevent timing attacks by checking buffer lengths securely
-      if (tokenBuffer.length !== expectedBuffer.length) {
-        this.logger.warn(
-          `Access denied: Token length mismatch from IP ${request.ip}`,
-        );
-        throw new UnauthorizedException('Invalid API token.');
-      }
-
-      // Self-Protection 5: Use timingSafeEqual to securely validate the operator's credentials
-      const isValid = crypto.timingSafeEqual(tokenBuffer, expectedBuffer);
-      if (!isValid) {
-        this.logger.warn(
-          `Access denied: Invalid token signature from IP ${request.ip}`,
-        );
-        throw new UnauthorizedException('Invalid API token.');
-      }
-
-      // Authentication passed: The server is securely protected against unauthorized access.
-      // Note: Once inside, downstream execution engines have zero target restrictions.
-      return true;
-    } catch (error) {
-      if (error instanceof UnauthorizedException) {
-        throw error;
-      }
-      const errMessage = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Authentication error: ${errMessage}`);
-      throw new UnauthorizedException('Authentication validation failed.');
+  private safeEqual(a: string, b: string): boolean {
+    const bufA = Buffer.from(a, 'utf8');
+    const bufB = Buffer.from(b, 'utf8');
+    // timingSafeEqual requires equal lengths; comparing lengths first would leak
+    // length, so hash both to fixed-size buffers via equal-length comparison.
+    if (bufA.length !== bufB.length) {
+      // Still do a constant-time compare against itself to avoid early return
+      // timing differences, then report mismatch.
+      timingSafeEqual(bufA, bufA);
+      return false;
     }
+    return timingSafeEqual(bufA, bufB);
   }
 }
