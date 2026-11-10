@@ -17,6 +17,7 @@ import { RunBatchesModule } from './modules/run-batches/run-batches.module.js';
 import { AgentTaskQueueModule } from './modules/agent-task-queue/agent-task-queue.module.js';
 import { SecurityAssessmentModule } from './security-assessment/security-assessment.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { SavedIpsModule } from './modules/saved-ips/saved-ips.module.js';
 
 export const { ObserveModule, ObserveInstrument } =
   createObserveModule();
@@ -47,6 +48,7 @@ const observeImports =
     AgentTaskQueueModule,
     SecurityAssessmentModule,
     AuthModule,
+    SavedIpsModule,
   ],
   controllers: [AppController],
   providers: [
